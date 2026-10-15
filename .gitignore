@@ -1,0 +1,9 @@
+# web/dist is intentionally NOT ignored - it's committed so a server owner
+# downloading a release gets a working bank tablet with zero npm steps.
+# See README.md's "Building the NUI" section.
+web/node_modules/
+web/.vite/
+
+*.bak
+.DS_Store
+web/tsconfig.tsbuildinfo

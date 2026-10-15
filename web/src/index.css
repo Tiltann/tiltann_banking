@@ -1,0 +1,71 @@
+@import 'tailwindcss';
+
+:root {
+	/* Fallback values match config/config.ui.lua's defaults, overwritten at
+	   runtime by state/theme.ts once the real Config.UI.Colors arrives, and
+	   optionally again by state/accent.ts for a per-viewer accent override.
+	   Every color utility in this UI references one of these via an
+	   arbitrary Tailwind value (e.g. bg-[var(--tb-surface)]) rather than a
+	   static Tailwind color, since the palette is only known at runtime. */
+	--tb-primary: #1c1f26;
+	--tb-secondary: #2a2e37;
+	--tb-accent: #4f8cff;
+	--tb-background: #111319;
+	--tb-surface: #1a1d24;
+	--tb-text-primary: #f2f3f5;
+	--tb-text-muted: #8b909c;
+	--tb-success: #3ecf8e;
+	--tb-danger: #e5484d;
+	--tb-warning: #e5a83d;
+}
+
+html,
+body,
+#root {
+	margin: 0;
+	height: 100%;
+	background: transparent;
+}
+
+body {
+	font-family: ui-sans-serif, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+	color: var(--tb-text-primary);
+	-webkit-font-smoothing: antialiased;
+}
+
+/* The tablet's inner screen scrolls; the default chunky scrollbar breaks the
+   device illusion, so keep it thin and on-palette. */
+* {
+	scrollbar-width: thin;
+	scrollbar-color: var(--tb-secondary) transparent;
+}
+
+*::-webkit-scrollbar {
+	width: 6px;
+	height: 6px;
+}
+
+*::-webkit-scrollbar-thumb {
+	background: var(--tb-secondary);
+	border-radius: 999px;
+}
+
+*::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+/* Number inputs: no spinner buttons, they never fit the design. */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+	-webkit-appearance: none;
+	margin: 0;
+}
+
+input[type='number'] {
+	-moz-appearance: textfield;
+	appearance: textfield;
+}
+
+input[type='date'] {
+	color-scheme: dark;
+}

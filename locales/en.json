@@ -1,0 +1,9 @@
+{
+	"atm_interact": "Use ATM",
+	"terminal_interact": "Use bank terminal",
+	"terminal_no_access": "You have no account here yet, visit an ATM first.",
+	"ui_open_failed": "The bank is not responding right now. Try again in a moment.",
+	"billing_no_access": "You have no account to send a bill from.",
+	"billing_keybind": "Open billing menu",
+	"invoice_received": "You received a new bill."
+}

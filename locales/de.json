@@ -1,0 +1,9 @@
+{
+	"atm_interact": "Geldautomat benutzen",
+	"terminal_interact": "Bankterminal benutzen",
+	"terminal_no_access": "Du hast hier noch kein Konto, besuche zuerst einen Geldautomaten.",
+	"ui_open_failed": "Die Bank antwortet gerade nicht. Versuch es gleich nochmal.",
+	"billing_no_access": "Du hast kein Konto, von dem du eine Rechnung stellen kannst.",
+	"billing_keybind": "Rechnungsmenü öffnen",
+	"invoice_received": "Du hast eine neue Rechnung erhalten."
+}

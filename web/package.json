@@ -1,0 +1,28 @@
+{
+	"name": "tiltann_banking-tablet",
+	"private": true,
+	"version": "0.1.0",
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "tsc -b && vite build",
+		"preview": "vite preview"
+	},
+	"dependencies": {
+		"@floating-ui/react": "^0.27.20",
+		"lucide-react": "^1.48.0",
+		"motion": "^12.43.0",
+		"react": "^18.3.1",
+		"react-dom": "^18.3.1",
+		"recharts": "^2.12.7"
+	},
+	"devDependencies": {
+		"@tailwindcss/vite": "^4.1.4",
+		"@types/react": "^18.3.5",
+		"@types/react-dom": "^18.3.0",
+		"@vitejs/plugin-react": "^4.3.1",
+		"tailwindcss": "^4.1.4",
+		"typescript": "^5.5.4",
+		"vite": "^5.4.2"
+	}
+}
