@@ -175,7 +175,7 @@ local function WriteLog(category, title, fields, colorOverride)
 		data[tostring(field.name):lower():gsub('%s+', '_')] = field.value
 	end
 
-	TbLogger.Info(category, title, data)
+	TbLogger.Debug(category, title, data)
 
 	if not Config.Logs.Enabled[category] then
 		return

@@ -140,7 +140,7 @@ local function RunInstall(sql)
 		end
 	end
 
-	TbLogger.Info('migrate', 'ran schema install', { statements = #statements, failures = failures })
+	TbLogger.Debug('migrate', 'ran schema install', { statements = #statements, failures = failures })
 
 	return failures
 end
@@ -166,7 +166,7 @@ function TbMigrate.EnsureColumn(tableName, columnName, definition)
 		return false
 	end
 
-	TbLogger.Info('migrate', 'added column', { table = tableName, column = columnName })
+	TbLogger.Debug('migrate', 'added column', { table = tableName, column = columnName })
 	return true
 end
 
@@ -191,7 +191,7 @@ local function EnsureNewColumns()
 	end
 
 	if added > 0 then
-		TbLogger.Info('migrate', 'schema migrated', { columns_added = added })
+		TbLogger.Debug('migrate', 'schema migrated', { columns_added = added })
 	end
 end
 
@@ -208,9 +208,9 @@ local function Bootstrap()
 	end
 
 	if #missing == 0 then
-		TbLogger.Info('migrate', 'schema present', { tables = #required })
+		TbLogger.Debug('migrate', 'schema present', { tables = #required })
 	else
-		TbLogger.Info('migrate', 'installing schema, tables are missing', { missing = missing })
+		TbLogger.Debug('migrate', 'installing schema, tables are missing', { missing = missing })
 
 		RunInstall(sql)
 
@@ -225,7 +225,7 @@ local function Bootstrap()
 				return
 			end
 		else
-			TbLogger.Info('migrate', 'schema installed', { tables = #required })
+			TbLogger.Debug('migrate', 'schema installed', { tables = #required })
 		end
 	end
 
@@ -234,6 +234,7 @@ local function Bootstrap()
 	end
 
 	MarkReady()
+	print('^3[tiltann_banking]^7 ^2Database READY!^7')
 end
 
 --- Waits for oxmysql, then bootstraps. MySQL.ready runs its callback in its

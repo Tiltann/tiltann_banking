@@ -304,7 +304,7 @@ local function RecordTransaction(fromAccountId, toAccountId, transactionType, am
 
 	-- Every money movement in the resource passes here, this one line is
 	-- the complete ledger in the console / ox logger.
-	TbLogger.Info('ledger', transactionType, {
+	TbLogger.Debug('ledger', transactionType, {
 		id = insertId, from = fromAccountId, to = toAccountId, amount = amount,
 		balance_after = balanceAfter, actor = actorIdentifier, note = note,
 	})

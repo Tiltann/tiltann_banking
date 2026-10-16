@@ -1,5 +1,5 @@
 --- @module server.updater.updater
---- Checks GitHub releases for a newer version of this resource and reports
+--- Checks the GitHub repository for a newer version of this resource and reports
 --- it in the console (and to admins in-game). Deliberately REPORT-ONLY: it
 --- never downloads or writes a file. A banking resource that overwrites its
 --- own scripts while players hold balances is a data-loss incident waiting
@@ -85,10 +85,50 @@ function TbUpdater.GetCurrentVersion()
 	return GetResourceMetadata(GetCurrentResourceName(), 'version', 0) or '0.0.0'
 end
 
---- Fetches the newest release from the GitHub API. Async (PerformHttpRequest
---- has no await form here), so the result arrives through `callback`. The
---- callback's third argument marks "nothing to compare against" (no release
---- published, private repo) as opposed to a real failure.
+--- GET with a User-Agent GitHub accepts. `callback(status, body)`.
+---@param url string
+---@param accept string?
+---@param callback fun(status: integer, body: string)
+local function Get(url, accept, callback)
+	PerformHttpRequest(url, function(status, body)
+		TbSafe.Run('updater:response', callback, status or 0, body or '')
+	end, 'GET', '', {
+		['User-Agent'] = ('tiltann_banking/%s'):format(TbUpdater.GetCurrentVersion()),
+		['Accept'] = accept or '*/*',
+	})
+end
+
+--- The `## <version>` section of CHANGELOG.md, without its heading.
+---@param changelog string
+---@param version string
+---@return string
+local function ChangelogSection(changelog, version)
+	local text = changelog:gsub('\r', '')
+	local out, inside = {}, false
+
+	for line in (text .. '\n'):gmatch('(.-)\n') do
+		local heading = line:match('^##%s+v?([%w%.%-]+)')
+
+		if heading then
+			if inside then
+				break
+			end
+
+			inside = heading == version
+		elseif inside then
+			out[#out + 1] = line
+		end
+	end
+
+	return (table.concat(out, '\n'):gsub('^%s+', ''):gsub('%s+$', ''))
+end
+
+--- Reads the newest version straight from the repository, no GitHub release
+--- needed: the `version` in fxmanifest.lua on the branch is the latest
+--- version, CHANGELOG.md has what changed, and the date of the last commit
+--- to the manifest is when it came out. Async, the result arrives through
+--- `callback`. Its third argument marks "nothing to compare against" (repo
+--- not found / private) as opposed to a real failure.
 ---@param callback fun(release: TbReleaseInfo?, errorMessage: string?, isBenign: boolean?)
 function TbUpdater.FetchLatestRelease(callback)
 	local repository = TbUpdater.GetRepository()
@@ -98,49 +138,56 @@ function TbUpdater.FetchLatestRelease(callback)
 		return
 	end
 
-	local url = ('https://api.github.com/repos/%s/releases/latest'):format(repository)
+	local branch = Config.Updater.Branch or 'main'
+	local raw = ('https://raw.githubusercontent.com/%s/%s/'):format(repository, branch)
 
-	PerformHttpRequest(url, function(status, body)
-		TbSafe.Run('updater:response', function()
-			if status == 404 then
-				-- Private repository, wrong name, or simply no release published
-				-- yet. A normal state for a fork or a WIP repo, so it is reported
-				-- as "nothing to compare against" rather than as a failure.
-				callback(nil, ('no published release found for %s'):format(repository), true)
-				return
+	Get(raw .. 'fxmanifest.lua', nil, function(status, manifest)
+		if status == 404 then
+			callback(nil, ('repository %s (branch %s) not found or not public'):format(repository, branch), true)
+			return
+		end
+
+		if status ~= 200 then
+			callback(nil, ('GitHub returned HTTP %s for %s'):format(tostring(status), repository))
+			return
+		end
+
+		local version = manifest:match("\nversion%s+['\"]([^'\"]+)['\"]") or manifest:match("^version%s+['\"]([^'\"]+)['\"]")
+
+		if not version then
+			callback(nil, 'no version found in the repository\'s fxmanifest.lua')
+			return
+		end
+
+		local release = {
+			version = version,
+			name = ('v%s'):format(version),
+			notes = '',
+			url = ('https://github.com/%s'):format(repository),
+			download = ('https://github.com/%s/archive/refs/heads/%s.zip'):format(repository, branch),
+		}
+
+		-- Changelog and date are nice to have: a failure there never hides the version.
+		Get(raw .. 'CHANGELOG.md', nil, function(logStatus, changelog)
+			if logStatus == 200 then
+				release.notes = ChangelogSection(changelog, version)
 			end
 
-			if status ~= 200 then
-				callback(nil, ('GitHub API returned HTTP %s for %s'):format(tostring(status), repository))
-				return
-			end
+			local commitsUrl = ('https://api.github.com/repos/%s/commits?path=fxmanifest.lua&sha=%s&per_page=1'):format(repository, branch)
 
-			local parsed, decoded = pcall(json.decode, body or '')
+			Get(commitsUrl, 'application/vnd.github+json', function(commitStatus, commits)
+				if commitStatus == 200 then
+					local ok, decoded = pcall(json.decode, commits)
 
-			if not parsed or type(decoded) ~= 'table' or type(decoded.tag_name) ~= 'string' then
-				callback(nil, 'GitHub API response could not be parsed')
-				return
-			end
+					if ok and type(decoded) == 'table' and decoded[1] and decoded[1].commit and decoded[1].commit.committer then
+						release.publishedAt = decoded[1].commit.committer.date
+					end
+				end
 
-			local download = nil
-
-			if type(decoded.assets) == 'table' and decoded.assets[1] then
-				download = decoded.assets[1].browser_download_url
-			end
-
-			callback({
-				version = (decoded.tag_name:gsub('^[vV]', '')),
-				name = decoded.name or decoded.tag_name,
-				notes = type(decoded.body) == 'string' and decoded.body or '',
-				url = decoded.html_url or ('https://github.com/%s/releases'):format(repository),
-				download = download,
-				publishedAt = decoded.published_at,
-			}, nil)
+				callback(release, nil)
+			end)
 		end)
-	end, 'GET', '', {
-		['User-Agent'] = ('tiltann_banking/%s'):format(TbUpdater.GetCurrentVersion()),
-		['Accept'] = 'application/vnd.github+json',
-	})
+	end)
 end
 
 ---@type TbReleaseInfo? Set once a newer release has been seen, for the admin notice.
@@ -166,43 +213,71 @@ local function FormatNotes(notes)
 	return (text:gsub('\n', '\n  '))
 end
 
---- One check: fetch, compare, report.
+local PREFIX = '^3[tiltann_banking]^7'
+
+--- "2026-10-16T12:30:00Z" -> "2026-10-16 12:30 UTC"
+---@param stamp string?
+---@return string
+local function FormatDate(stamp)
+	local date, time = tostring(stamp or ''):match('^(%d+-%d+-%d+)T(%d+:%d+)')
+	return date and ('%s %s UTC'):format(date, time) or 'unknown'
+end
+
+--- One check: fetch, compare, print a status block to the console.
 function TbUpdater.Check()
 	local current = TbUpdater.GetCurrentVersion()
 
 	TbUpdater.FetchLatestRelease(function(release, errorMessage, isBenign)
 		if not release then
+			print(('%s version check: running ^5%s^7'):format(PREFIX, current))
+
 			if isBenign then
+				print(('%s repository not found or not public, nothing to compare against'):format(PREFIX))
 				TbLogger.Debug('updater', 'nothing to compare against', { reason = errorMessage })
 			else
+				print(('%s ^1version check failed:^7 %s'):format(PREFIX, errorMessage or 'unknown error'))
 				TbLogger.Warn('updater', 'update check failed', { error = errorMessage })
 			end
 
 			return
 		end
 
-		if not TbUpdater.IsNewer(release.version, current) then
+		local newer = TbUpdater.IsNewer(release.version, current)
+
+		print(('%s ------------------------------------------------'):format(PREFIX))
+		print(('%s version checker is active (%s)'):format(PREFIX, TbUpdater.GetRepository() or '?'))
+		print(('%s installed: ^5%s^7'):format(PREFIX, current))
+		print(('%s latest:    ^5%s^7, updated %s'):format(PREFIX, release.version, FormatDate(release.publishedAt)))
+
+		if newer then
+			print(('%s ^3update available: %s -> %s^7'):format(PREFIX, current, release.version))
+		else
+			print(('%s ^2you are up to date^7'):format(PREFIX))
+		end
+
+		if release.notes ~= '' then
+			print(('%s %s:\n  %s'):format(PREFIX, newer and "what's new" or 'last update', FormatNotes(release.notes)))
+		end
+
+		if newer then
+			print(('%s get it: %s (Code -> Download ZIP)'):format(PREFIX, release.url))
+
+			if release.download then
+				print(('%s direct zip: %s'):format(PREFIX, release.download))
+			end
+		end
+
+		print(('%s ------------------------------------------------'):format(PREFIX))
+
+		if not newer then
 			pendingUpdate = nil
-			TbLogger.Info('updater', 'up to date', { version = current })
+			TbLogger.Debug('updater', 'up to date', { version = current })
 			return
 		end
 
 		pendingUpdate = release
 
-		print(('^3[tiltann_banking]^7 ^5update available: %s -> %s^7'):format(current, release.version))
-		print(('^3[tiltann_banking]^7 %s'):format(release.name))
-
-		if release.notes ~= '' then
-			print(('^3[tiltann_banking]^7 changes:\n  %s'):format(FormatNotes(release.notes)))
-		end
-
-		print(('^3[tiltann_banking]^7 release: %s'):format(release.url))
-
-		if release.download then
-			print(('^3[tiltann_banking]^7 download: %s'):format(release.download))
-		end
-
-		TbLogger.Info('updater', 'update available', {
+		TbLogger.Debug('updater', 'update available', {
 			current = current,
 			latest = release.version,
 			url = release.url,
@@ -263,8 +338,8 @@ end)
 
 local checkStarted = false
 
---- Starts the update check. First check runs shortly after boot (so it
---- never competes with the schema migration). Once per resource start.
+--- Starts the update check. The check runs immediately, once per resource
+--- start or restart.
 function TbUpdater.Start()
 	if checkStarted or not Config.Updater.Enabled then
 		return
@@ -272,8 +347,6 @@ function TbUpdater.Start()
 
 	checkStarted = true
 
-	SetTimeout(15000, function()
-		TbSafe.Run('updater:check', TbUpdater.Check)
-	end)
+	TbSafe.Run('updater:check', TbUpdater.Check)
 
 end

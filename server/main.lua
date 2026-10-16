@@ -192,11 +192,10 @@ TbMigrate.OnReady(function()
 		end
 	end
 
-	TbLogger.Info('startup', 'ready', {
-		version = GetResourceMetadata(GetCurrentResourceName(), 'version', 0),
+	print(('^3[tiltann_banking]^7 ^2Started^7 v%s'):format(GetResourceMetadata(GetCurrentResourceName(), 'version', 0) or '?'))
+	TbLogger.Debug('startup', 'ready', {
 		ms = GetGameTimer() - started,
 		debug = TbLogger.IsDebug(),
-		ox_logger = Config.Logs.OxLogger and Config.Logs.OxLogger.Enabled or false,
 		savings = Config.Savings.Enabled, loans = Config.Loans.Enabled, tax = Config.Tax.Enabled,
 		billing = Config.Billing.Enabled, cards = Config.Cards.Enabled, orders = Config.StandingOrders.Enabled,
 	})

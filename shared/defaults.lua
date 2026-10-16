@@ -197,6 +197,7 @@ local defaults = {
 	Updater = {
 		Enabled = true,
 		Repository = nil, -- defaults to `repository` in fxmanifest.lua
+		Branch = 'main',  -- the version is read from fxmanifest.lua on this branch
 		NotifyAdmins = true,
 		MaxNotesLength = 700,
 	},

@@ -4,7 +4,7 @@
 CreateThread(function()
 	TbSafe.Run('startup:client', function()
 		TbFramework.Ready()
-		TbLogger.Info('startup', 'client ready', { version = GetResourceMetadata(GetCurrentResourceName(), 'version', 0) })
+		TbLogger.Debug('startup', 'client ready', { version = GetResourceMetadata(GetCurrentResourceName(), 'version', 0) })
 
 		-- The framework tells the client when the bank balance changes (another
 		-- script, an admin command). The server re-reads it, so the client never
