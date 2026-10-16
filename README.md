@@ -1,11 +1,16 @@
 # tiltann_banking
 
-A banking resource for FiveM. Players get personal and savings accounts, businesses tied to jobs, bank cards with a PIN, ATMs, a tablet style bank terminal at the counters, loans, tax, invoices and standing orders. The UI is a React page (see `web/`).
+A banking resource for FiveM. Players get personal and savings accounts, businesses tied to jobs, bank cards with a PIN, ATMs, a tablet style bank terminal at the counters, loans, tax, invoices and standing orders.
 
 ## Preview:
-https://streamable.com/u0ae9x
+https://github.com/user-attachments/assets/1fd35f5a-efb3-4194-b139-6d3b08ff45ab
 
-Exports for other scripts are described in [exports.md](exports.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md).
+
+Exports for other scripts are described in [exports.md](exports.md). 
+
+Information for Developers are listed in [DEVELOPER.MD](DEVELOPER.md).
+
+Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
 Requirements:
 
