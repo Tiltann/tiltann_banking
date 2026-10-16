@@ -46,6 +46,7 @@ A player has one **main account**, and can have more personal accounts and savin
 | `1` | The main account. |
 | `2`, `3`, ... | The next accounts in the order `GetAccounts` returns them: personal accounts first, then savings accounts, oldest first. |
 | `'920-48271039'` | An account number (text). The account has to belong to this player, otherwise it counts as not found. |
+| `0` | **Only for `RemoveMoney` and `RemoveMoneyBySource`.** Takes the money from the first account that has enough for the whole amount: the main account first, then the others in `GetAccounts` order. Locked savings accounts are skipped. The amount is never split over several accounts. |
 
 If the account does not exist, balance exports return `0` and money exports return `false, 'not_found'`.
 
@@ -95,6 +96,26 @@ Several exports return an account as a table with these fields:
 
 Dates come as the database delivers them: usually a number (milliseconds since 1970), or text `'2026-10-16 12:30:00'` if your oxmysql uses string dates.
 
+Example of a main account (as JSON, `null` is `nil` in Lua):
+
+```json
+{
+  "id": 91,
+  "type": "personal",
+  "ownerIdentifier": "char1:2b9e6f1a7c88",
+  "jobName": null,
+  "number": "920-48271039",
+  "name": "Main account",
+  "balance": 18076,
+  "isDefault": true,
+  "isTreasury": false,
+  "interestRate": null,
+  "lockedUntil": null,
+  "historyClearedAt": null,
+  "createdAt": 1760610000000
+}
+```
+
 ---
 
 ## Reading accounts
@@ -116,6 +137,45 @@ end
 -- 2  savings   920-55120044  Holiday        4000
 ```
 
+What it returns (as JSON):
+
+```json
+[
+  {
+    "index": 1,
+    "id": 91,
+    "type": "personal",
+    "ownerIdentifier": "char1:2b9e6f1a7c88",
+    "jobName": null,
+    "number": "920-48271039",
+    "name": "Main account",
+    "balance": 18076,
+    "isDefault": true,
+    "isTreasury": false,
+    "interestRate": null,
+    "lockedUntil": null,
+    "historyClearedAt": null,
+    "createdAt": 1760610000000
+  },
+  {
+    "index": 2,
+    "id": 94,
+    "type": "savings",
+    "ownerIdentifier": "char1:2b9e6f1a7c88",
+    "jobName": null,
+    "number": "920-55120044",
+    "name": "Holiday",
+    "balance": 4000,
+    "isDefault": false,
+    "isTreasury": false,
+    "interestRate": 1.5,
+    "lockedUntil": 1760900000000,
+    "historyClearedAt": null,
+    "createdAt": 1760620000000
+  }
+]
+```
+
 ### `GetDefaultAccount(identifier)`
 
 The main account. It is created when the player has none yet.
@@ -128,6 +188,26 @@ The main account. It is created when the player has none yet.
 ```lua
 local account = exports.tiltann_banking:GetDefaultAccount(identifier)
 print(account.id, account.number, account.balance)
+```
+
+What it returns (as JSON):
+
+```json
+{
+  "id": 91,
+  "type": "personal",
+  "ownerIdentifier": "char1:2b9e6f1a7c88",
+  "jobName": null,
+  "number": "920-48271039",
+  "name": "Main account",
+  "balance": 18076,
+  "isDefault": true,
+  "isTreasury": false,
+  "interestRate": null,
+  "lockedUntil": null,
+  "historyClearedAt": null,
+  "createdAt": 1760610000000
+}
 ```
 
 ### `GetAccountByNumber(number)`
@@ -146,6 +226,28 @@ if account then
     print(account.name, account.balance)
 end
 ```
+
+What it returns for a business account (as JSON):
+
+```json
+{
+  "id": 12,
+  "type": "society",
+  "ownerIdentifier": null,
+  "jobName": "mechanic",
+  "number": "920-11223344",
+  "name": "Mechanic",
+  "balance": 52400,
+  "isDefault": true,
+  "isTreasury": false,
+  "interestRate": null,
+  "lockedUntil": null,
+  "historyClearedAt": null,
+  "createdAt": 1758000000000
+}
+```
+
+And for a number that does not exist: `nil` (`null`).
 
 ### `GetAccountOwner(number)`
 
@@ -179,6 +281,47 @@ elseif owner then
 end
 ```
 
+The owner is online (as JSON):
+
+```json
+{
+  "number": "920-48271039",
+  "type": "personal",
+  "accountName": "Main account",
+  "identifier": "char1:2b9e6f1a7c88",
+  "name": "Max Mustermann",
+  "online": true,
+  "source": 12,
+  "jobName": null
+}
+```
+
+The owner is offline (`source` is missing):
+
+```json
+{
+  "number": "920-48271039",
+  "type": "personal",
+  "accountName": "Main account",
+  "identifier": "char1:2b9e6f1a7c88",
+  "name": "Max Mustermann",
+  "online": false,
+  "jobName": null
+}
+```
+
+A business account (no owner):
+
+```json
+{
+  "number": "920-11223344",
+  "type": "society",
+  "accountName": "Mechanic",
+  "online": false,
+  "jobName": "mechanic"
+}
+```
+
 ---
 
 ## Balances
@@ -198,6 +341,8 @@ local second  = exports.tiltann_banking:GetBalance(identifier, 2)
 local byNumber = exports.tiltann_banking:GetBalance(identifier, '920-55120044')
 ```
 
+Returns just a number, for example `18076`. The second line returns `4000`, an unknown account returns `0`.
+
 ### `GetTotalBalance(identifier)`
 
 All money of a player: the sum of every personal and savings account.
@@ -212,6 +357,8 @@ if exports.tiltann_banking:GetTotalBalance(identifier) >= 100000 then
     -- rich enough for the penthouse
 end
 ```
+
+Returns just a number, for example `22076` (18076 + 4000 from the two accounts above).
 
 ---
 
@@ -237,6 +384,14 @@ exports.tiltann_banking:AddMoney(identifier, 200, 'Bonus', 2)
 local ok, reason = exports.tiltann_banking:AddMoney(identifier, 200, 'Bonus', '920-55120044')
 ```
 
+What it returns:
+
+| Case | `ok` | `reason` |
+| --- | --- | --- |
+| It worked | `true` | `nil` |
+| Amount is `0` or `-5` | `false` | `"invalid_amount"` |
+| The player or account does not exist | `false` | `"not_found"` |
+
 ### `RemoveMoney(identifier, amount, note, account)`
 
 Takes money from an account. If the balance is too low, **nothing moves**.
@@ -257,7 +412,20 @@ end
 
 -- from the second account
 exports.tiltann_banking:RemoveMoney(identifier, 250, 'Shop purchase', 2)
+
+-- from any account that has enough money (main account first)
+exports.tiltann_banking:RemoveMoney(identifier, 250, 'Shop purchase', 0)
 ```
+
+What it returns:
+
+| Case | `ok` | `reason` |
+| --- | --- | --- |
+| It worked | `true` | `nil` |
+| Balance is too low (with `account = 0`: no account has enough) | `false` | `"insufficient_funds"` |
+| Amount is `0` or `-5` | `false` | `"invalid_amount"` |
+| The player or account does not exist | `false` | `"not_found"` |
+| Savings account is locked | `false` | `"savings_locked"` |
 
 ---
 
@@ -309,6 +477,16 @@ end
 exports.tiltann_banking:TransferToNumber(identifier, 12, 100, 'Gift')
 ```
 
+What it returns:
+
+| Case | `ok` | `reason` |
+| --- | --- | --- |
+| It worked | `true` | `nil` |
+| Sender or receiver not found (or the server id is not online) | `false` | `"not_found"` |
+| Balance is too low | `false` | `"insufficient_funds"` |
+| Sender and receiver are the same account | `false` | `"same_account"` |
+| Amount is `0` or `-5` | `false` | `"invalid_amount"` |
+
 ---
 
 ## Business accounts
@@ -334,6 +512,26 @@ end
 
 Use `society.id` as `fromAccountId` for `CreateInvoice`. Players pay to `society.number`.
 
+What it returns (as JSON):
+
+```json
+{
+  "id": 12,
+  "type": "society",
+  "ownerIdentifier": null,
+  "jobName": "mechanic",
+  "number": "920-11223344",
+  "name": "Mechanic",
+  "balance": 52400,
+  "isDefault": true,
+  "isTreasury": false,
+  "interestRate": null,
+  "lockedUntil": null,
+  "historyClearedAt": null,
+  "createdAt": 1758000000000
+}
+```
+
 ### `GetSocietyBalance(job)`
 
 | | |
@@ -345,6 +543,8 @@ Use `society.id` as `fromAccountId` for `CreateInvoice`. Players pay to `society
 local balance = exports.tiltann_banking:GetSocietyBalance('mechanic')
 ```
 
+Returns just a number, for example `52400`.
+
 ### `AddSocietyMoney(job, amount, note)`
 
 | | |
@@ -355,6 +555,8 @@ local balance = exports.tiltann_banking:GetSocietyBalance('mechanic')
 ```lua
 exports.tiltann_banking:AddSocietyMoney('mechanic', 1200, 'Repair job')
 ```
+
+Returns `true` or `false`.
 
 ### `RemoveSocietyMoney(job, amount, note)`
 
@@ -397,6 +599,17 @@ if society then
     end
 end
 ```
+
+What it returns:
+
+| Case | `ok` | `reason` |
+| --- | --- | --- |
+| The invoice was sent | `true` | `nil` |
+| The receiver does not exist | `false` | `"recipient_not_found"` |
+| Billing is turned off | `false` | `"billing_disabled"` |
+| Amount is `0` or the sender equals the receiver | `false` | `"billing_invalid_amount"` |
+| The sending account does not exist | `false` | `"billing_recipient_not_found"` |
+| The sender has too many open invoices | `false` | `"billing_too_many_open"` |
 
 ---
 

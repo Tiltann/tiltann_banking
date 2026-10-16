@@ -95,6 +95,28 @@ end
 ---@return boolean ok
 ---@return string? errorReason
 local function Debit(identifier, amount, note, account)
+	-- account 0: take it from the first account that can pay the whole amount
+	-- (main account first), skipping locked savings accounts.
+	if identifier and tostring(account) == '0' then
+		local wanted = TbUtils.RoundMoney(amount)
+
+		if wanted <= 0 then
+			return false, 'invalid_amount'
+		end
+
+		for _, candidate in ipairs(ListWithIndex(identifier)) do
+			if candidate.balance >= wanted then
+				local ok, reason = TbAccounts.Debit(candidate.id, wanted, TbEnums.TransactionType.WITHDRAW, nil, note or 'External debit')
+
+				if ok or reason ~= 'savings_locked' then
+					return ok, reason
+				end
+			end
+		end
+
+		return false, 'insufficient_funds'
+	end
+
 	local target = identifier and ResolveOwnedAccount(identifier, account)
 
 	if not target then
@@ -162,7 +184,7 @@ SafeExport('AddMoney', Credit)
 ---@param identifier string
 ---@param amount integer
 ---@param note string?
----@param account integer|string|nil Position (1 = main) or account number.
+---@param account integer|string|nil Position (1 = main), account number, or 0 = any account with enough money.
 ---@return boolean ok
 ---@return string? errorReason 'insufficient_funds' | 'invalid_amount' | 'not_found' | 'savings_locked'
 SafeExport('RemoveMoney', Debit)
