@@ -2,46 +2,111 @@
 
 Exports for other resources (shops, jobs, garages, HUDs). They live in `server/exports.lua` and `client/exports.lua`.
 
-All server exports are wrapped: a bad argument or an internal error never throws in your script. The export logs an error in the console and returns `false` (or `nil`) instead.
+* [Basics](#basics): identifiers, amounts, account choice, return values, the account table
+* [Reading accounts](#reading-accounts): `GetAccounts`, `GetDefaultAccount`, `GetAccountByNumber`, `GetAccountOwner`
+* [Balances](#balances): `GetBalance`, `GetTotalBalance`
+* [Adding and removing money](#adding-and-removing-money): `AddMoney`, `RemoveMoney`
+* [By server id](#by-server-id): the same with a `source`
+* [Transfers](#transfers): `TransferToNumber`
+* [Business accounts](#business-accounts): `GetSocietyAccountByName`, `GetSocietyBalance`, `AddSocietyMoney`, `RemoveSocietyMoney`
+* [Invoices](#invoices): `CreateInvoice`
+* [Client exports](#client-exports)
+
+---
 
 ## Basics
 
-**Identifier.** Functions without `BySource` take the player's framework identifier. With ESX that is `xPlayer.identifier` (for example `char1:abc123...`). It works for offline players too.
+### Safe by design
+
+Every server export is wrapped. A wrong argument or an internal error **never throws** in your script. The export writes an error to the console and returns `false` (or `nil`) instead, so check the result.
+
+### Identifier
+
+Functions without `BySource` take the player's framework identifier. With ESX that is `xPlayer.identifier` (for example `char1:abc123...`). It works for offline players too.
 
 ```lua
 local identifier = ESX.GetPlayerFromId(source).identifier
 ```
 
-**Amounts.** Whole numbers only. Zero or negative amounts are refused.
+### Amounts
 
-**Notes.** The optional `note` shows up in the player's transaction history. Without one, the history says "External credit" or "External debit".
+Whole numbers. A decimal is rounded to the nearest whole number (`10.5` becomes `11`). Zero, negative numbers, text and `nil` count as an invalid amount and nothing moves.
 
-**Recipients.** Wherever a recipient is asked for, you can give an account number (`920-48271039`) or a server id (`12`). A server id means that player's main account, so the player has to be online.
+### Notes
 
-**Which account?** Without an `account` argument the exports use the player's **main** account (the one mirrored into the framework bank balance). See "Accounts: which one?" to use another account or a savings account. `TransferToNumber` always sends from the main account.
+The optional `note` is shown in the player's transaction history. Without one the history says "External credit", "External debit" or "External transfer".
 
----
+### Which account? (the `account` argument)
 
-## Server exports
-
-### Accounts: which one?
-
-A player has a **main account** and can have more personal accounts and savings accounts. `GetBalance`, `AddMoney`, `RemoveMoney` and their `BySource` versions take an optional last argument `account` that picks one of them:
+A player has one **main account**, and can have more personal accounts and savings accounts. Exports that take `account` use it like this:
 
 | `account` | Meaning |
 | --- | --- |
-| left out | The main account. |
+| left out (`nil`) | The main account. |
 | `1` | The main account. |
-| `2`, `3`, ... | The next accounts, in the order of `GetAccounts` (personal accounts first, then savings accounts, oldest first). |
-| `'920-48271039'` | An account number. It has to belong to that player, otherwise nothing happens. |
+| `2`, `3`, ... | The next accounts in the order `GetAccounts` returns them: personal accounts first, then savings accounts, oldest first. |
+| `'920-48271039'` | An account number (text). The account has to belong to this player, otherwise it counts as not found. |
 
-Use `GetAccounts` to see what a player has. If the account does not exist, the functions return `false, 'not_found'`.
+If the account does not exist, balance exports return `0` and money exports return `false, 'not_found'`.
 
-### Player balance
+### Recipients (numberOrServerId)
 
-#### `GetAccounts(identifier)` / `GetAccountsBySource(source)`
+Where an export asks for a recipient, give one of:
 
-Returns a list of all personal and savings accounts the player owns, main account first. Every entry has an `index` that you can pass as `account`, and a `number`.
+| Value | Meaning |
+| --- | --- |
+| `'920-48271039'` | An account number. That exact account. |
+| `12` | A server id. That player's main account. The player has to be online. |
+| `'char1:abc123'` | An identifier (text that is not an account number). That player's main account, online or offline. |
+
+### Return values
+
+Money exports return two values: `ok, reason`. `ok` is `true` on success. On failure `ok` is `false` and `reason` is one of these texts:
+
+| `reason` | Meaning |
+| --- | --- |
+| `invalid_amount` | The amount is zero, negative or not a number. |
+| `not_found` | The player, account or recipient does not exist. |
+| `insufficient_funds` | The balance is too low. Nothing moved. |
+| `savings_locked` | A savings account is locked after a deposit (`Config.Savings.WithdrawLockSeconds`). |
+| `same_account` | Sender and receiver are the same account. |
+| `credit_failed` | The receiving side failed, the money was returned to the sender. |
+
+### The account table
+
+Several exports return an account as a table with these fields:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `id` | number | Internal account id. Needed for `CreateInvoice`. |
+| `type` | text | `'personal'`, `'savings'` or `'society'` (business). |
+| `ownerIdentifier` | text or `nil` | The owner. `nil` for business accounts. |
+| `jobName` | text or `nil` | The linked job (business accounts), otherwise `nil`. |
+| `number` | text | The account number, for example `'920-48271039'`. |
+| `name` | text | The name of the account. |
+| `balance` | number | The current balance. |
+| `isDefault` | boolean | `true` for the main account. |
+| `isTreasury` | boolean | `true` for a business treasury account. |
+| `interestRate` | number or `nil` | Interest rate in percent (savings accounts). |
+| `lockedUntil` | date or `nil` | Savings: no withdrawal before this time. |
+| `historyClearedAt` | date or `nil` | The time the player cleared the history. |
+| `createdAt` | date | When the account was created. |
+| `index` | number | **Only in `GetAccounts`.** The position to pass as `account`. |
+
+Dates come as the database delivers them: usually a number (milliseconds since 1970), or text `'2026-10-16 12:30:00'` if your oxmysql uses string dates.
+
+---
+
+## Reading accounts
+
+### `GetAccounts(identifier)` and `GetAccountsBySource(source)`
+
+All personal and savings accounts a player owns.
+
+| | |
+| --- | --- |
+| **Takes** | `identifier` (text), or `source` (number) for the `BySource` version. |
+| **Returns** | A list of [account tables](#the-account-table), main account first. Every entry has an `index`. An empty list if the player is not logged in (`BySource`). |
 
 ```lua
 for _, account in ipairs(exports.tiltann_banking:GetAccounts(identifier)) do
@@ -51,81 +116,164 @@ end
 -- 2  savings   920-55120044  Holiday        4000
 ```
 
-Fields: `index`, `id`, `type` (`personal` or `savings`), `ownerIdentifier`, `number`, `name`, `balance`, `isDefault`, `interestRate`, `lockedUntil`, `historyClearedAt`, `createdAt`.
+### `GetDefaultAccount(identifier)`
 
-#### `GetBalance(identifier, account)`
+The main account. It is created when the player has none yet.
 
-Balance of one account, an integer. Returns `0` if the account does not exist. Without `account` it is the main account.
+| | |
+| --- | --- |
+| **Takes** | `identifier` (text). |
+| **Returns** | The main [account table](#the-account-table). |
 
 ```lua
-local main = exports.tiltann_banking:GetBalance(identifier)
-local savings = exports.tiltann_banking:GetBalance(identifier, 2)
+local account = exports.tiltann_banking:GetDefaultAccount(identifier)
+print(account.id, account.number, account.balance)
+```
+
+### `GetAccountByNumber(number)`
+
+Looks an account up by its number. Works for every account type, including business accounts.
+
+| | |
+| --- | --- |
+| **Takes** | `number` (text), for example `'920-48271039'`. |
+| **Returns** | The [account table](#the-account-table), or `nil` if the number does not exist. |
+
+```lua
+local account = exports.tiltann_banking:GetAccountByNumber('920-48271039')
+
+if account then
+    print(account.name, account.balance)
+end
+```
+
+### `GetAccountOwner(number)`
+
+Who an account belongs to.
+
+| | |
+| --- | --- |
+| **Takes** | `number` (text), the account number. |
+| **Returns** | A table, or `nil` if the number does not exist. |
+
+The table:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `number` | text | The account number. |
+| `type` | text | `'personal'`, `'savings'` or `'society'`. |
+| `accountName` | text | The name of the account. |
+| `identifier` | text or `nil` | The owner's identifier. `nil` for business accounts. |
+| `name` | text or `nil` | The owner's character name (the online character, or the ESX `users` table for offline players). `nil` for business accounts. |
+| `online` | boolean | `true` if the owner is online right now. |
+| `source` | number or `nil` | The owner's server id, only when `online`. |
+| `jobName` | text or `nil` | The job, for business accounts. |
+
+```lua
+local owner = exports.tiltann_banking:GetAccountOwner('920-48271039')
+
+if owner and owner.online then
+    TriggerClientEvent('ox_lib:notify', owner.source, { description = 'Somebody looked up your account.' })
+elseif owner then
+    print(('Account belongs to %s (offline)'):format(owner.name or owner.identifier))
+end
+```
+
+---
+
+## Balances
+
+### `GetBalance(identifier, account)`
+
+The balance of one account.
+
+| | |
+| --- | --- |
+| **Takes** | `identifier` (text). `account` (optional, see [Which account?](#which-account-the-account-argument)). |
+| **Returns** | The balance (number). `0` if the account does not exist. |
+
+```lua
+local main    = exports.tiltann_banking:GetBalance(identifier)
+local second  = exports.tiltann_banking:GetBalance(identifier, 2)
 local byNumber = exports.tiltann_banking:GetBalance(identifier, '920-55120044')
 ```
 
-#### `GetTotalBalance(identifier)` / `GetTotalBalanceBySource(source)`
+### `GetTotalBalance(identifier)`
 
-All money of the player: the sum of every personal and savings account.
+All money of a player: the sum of every personal and savings account.
+
+| | |
+| --- | --- |
+| **Takes** | `identifier` (text). |
+| **Returns** | The total (number). |
 
 ```lua
-local total = exports.tiltann_banking:GetTotalBalance(identifier)
-
-if total >= 100000 then
+if exports.tiltann_banking:GetTotalBalance(identifier) >= 100000 then
     -- rich enough for the penthouse
 end
 ```
 
-#### `GetDefaultAccount(identifier)`
+---
 
-Returns the main account as a table, creating it if needed.
+## Adding and removing money
 
-```lua
-local account = exports.tiltann_banking:GetDefaultAccount(identifier)
-print(account.id, account.number, account.name, account.balance)
-```
+### `AddMoney(identifier, amount, note, account)`
 
-#### `AddMoney(identifier, amount, note, account)`
+Adds money to an account. Shown in the history as a deposit.
 
-Adds money. Booked as a deposit. Returns `ok, reason`. Reasons: `invalid_amount`, `not_found` (no such account).
+| | |
+| --- | --- |
+| **Takes** | `identifier` (text), `amount` (number), `note` (optional text), `account` (optional, see [Which account?](#which-account-the-account-argument)). |
+| **Returns** | `ok` (boolean), `reason` (text, only when `ok` is `false`: `invalid_amount` or `not_found`). |
 
 ```lua
 -- paycheck to the main account
 exports.tiltann_banking:AddMoney(identifier, 1500, 'Paycheck')
 
--- interest bonus to the second account
+-- to the second account
 exports.tiltann_banking:AddMoney(identifier, 200, 'Bonus', 2)
 
 -- to a specific account number
-exports.tiltann_banking:AddMoney(identifier, 200, 'Bonus', '920-55120044')
+local ok, reason = exports.tiltann_banking:AddMoney(identifier, 200, 'Bonus', '920-55120044')
 ```
 
-#### `RemoveMoney(identifier, amount, note, account)`
+### `RemoveMoney(identifier, amount, note, account)`
 
-Takes money. If the balance is too low, **nothing moves**. Returns `ok, reason`. Reasons: `insufficient_funds`, `invalid_amount`, `not_found`, `savings_locked` (a savings account is locked after a deposit).
+Takes money from an account. If the balance is too low, **nothing moves**.
+
+| | |
+| --- | --- |
+| **Takes** | `identifier` (text), `amount` (number), `note` (optional text), `account` (optional). |
+| **Returns** | `ok` (boolean), `reason` (text, only when `ok` is `false`: `insufficient_funds`, `invalid_amount`, `not_found` or `savings_locked`). |
 
 ```lua
 local ok, reason = exports.tiltann_banking:RemoveMoney(identifier, 250, 'Shop purchase')
 
 if ok then
     exports.ox_inventory:AddItem(source, 'bread', 1)
-else
-    print('Payment failed: ' .. tostring(reason))
+elseif reason == 'insufficient_funds' then
+    TriggerClientEvent('ox_lib:notify', source, { type = 'error', description = 'Not enough money' })
 end
 
 -- from the second account
 exports.tiltann_banking:RemoveMoney(identifier, 250, 'Shop purchase', 2)
 ```
 
-### The same by server id
+---
 
-For scripts that only know the player's `source`. If the player is not logged in, `GetBalanceBySource` and `GetTotalBalanceBySource` return `0` and the others return `false, 'not_found'`.
+## By server id
 
-```lua
-exports.tiltann_banking:GetBalanceBySource(source, account)
-exports.tiltann_banking:GetTotalBalanceBySource(source)
-exports.tiltann_banking:AddMoneyBySource(source, amount, note, account)
-exports.tiltann_banking:RemoveMoneyBySource(source, amount, note, account)
-```
+For scripts that only know the player's `source`. They do the same as the versions above, the first argument is the server id.
+
+| Export | Takes | Returns |
+| --- | --- | --- |
+| `GetBalanceBySource(source, account)` | `source`, optional `account` | Balance (number), `0` if the player is not logged in or the account does not exist. |
+| `GetTotalBalanceBySource(source)` | `source` | The total of all accounts (number), `0` if not logged in. |
+| `AddMoneyBySource(source, amount, note, account)` | `source`, `amount`, optional `note`, optional `account` | `ok, reason` as in `AddMoney`. |
+| `RemoveMoneyBySource(source, amount, note, account)` | `source`, `amount`, optional `note`, optional `account` | `ok, reason` as in `RemoveMoney`. |
+| `GetAccountsBySource(source)` | `source` | List of account tables, see `GetAccounts`. |
+
+If the player is not logged in, the money functions return `false, 'not_found'`.
 
 ```lua
 RegisterNetEvent('myshop:buy', function()
@@ -137,13 +285,18 @@ RegisterNetEvent('myshop:buy', function()
 end)
 ```
 
-### Transfers
+---
 
-#### `TransferToNumber(fromIdentifier, numberOrServerId, amount, note)`
+## Transfers
 
-Moves money from a player's default account to another account. Returns `ok, reason`.
+### `TransferToNumber(fromIdentifier, numberOrServerId, amount, note)`
 
-Reasons: `not_found`, `invalid_amount`, `same_account`, `insufficient_funds`, `savings_locked`.
+Moves money from a player's **main account** to another account.
+
+| | |
+| --- | --- |
+| **Takes** | `fromIdentifier` (text), the sender. `numberOrServerId`, the receiver (see [Recipients](#recipients-numberorserverid)). `amount` (number). `note` (optional text). |
+| **Returns** | `ok` (boolean), `reason` (text, only when `ok` is `false`: `not_found`, `invalid_amount`, `same_account`, `insufficient_funds`, `savings_locked` or `credit_failed`). |
 
 ```lua
 local ok, reason = exports.tiltann_banking:TransferToNumber(identifier, '920-48271039', 500, 'Rent')
@@ -151,23 +304,25 @@ local ok, reason = exports.tiltann_banking:TransferToNumber(identifier, '920-482
 if not ok then
     print('Transfer failed: ' .. tostring(reason))
 end
+
+-- to the player with server id 12
+exports.tiltann_banking:TransferToNumber(identifier, 12, 100, 'Gift')
 ```
 
-#### `GetAccountByNumber(number)`
+---
 
-Returns the account table for an account number, or `nil`.
+## Business accounts
 
-```lua
-local account = exports.tiltann_banking:GetAccountByNumber('920-48271039')
+Every job has a business account, created the first time it is needed. A business account is an [account table](#the-account-table) with `type = 'society'`.
 
-if account then
-    print(account.name, account.balance)
-end
-```
+### `GetSocietyAccountByName(name)`
 
-#### `GetSocietyAccountByName(name)`
+Finds the business account of a job.
 
-The business account of a job. `name` is the job name (`'mechanic'`) or the business name or job label, upper and lower case do not matter. If the job exists in your framework but has no business account yet, it is created. Returns `nil` for an unknown name.
+| | |
+| --- | --- |
+| **Takes** | `name` (text): the job name (`'mechanic'`), the business name or the job label. Upper and lower case do not matter. |
+| **Returns** | The [account table](#the-account-table), or `nil` for an unknown name. If the job exists in your framework but has no business account yet, it is created. |
 
 ```lua
 local society = exports.tiltann_banking:GetSocietyAccountByName('mechanic')
@@ -177,58 +332,62 @@ if society then
 end
 ```
 
-The `id` is what `CreateInvoice` needs as `fromAccountId`, the `number` is what players pay to:
+Use `society.id` as `fromAccountId` for `CreateInvoice`. Players pay to `society.number`.
+
+### `GetSocietyBalance(job)`
+
+| | |
+| --- | --- |
+| **Takes** | `job` (text), the job name. |
+| **Returns** | The balance of the business (number). |
+
+```lua
+local balance = exports.tiltann_banking:GetSocietyBalance('mechanic')
+```
+
+### `AddSocietyMoney(job, amount, note)`
+
+| | |
+| --- | --- |
+| **Takes** | `job` (text), `amount` (number), `note` (optional text). |
+| **Returns** | `true` on success, `false` otherwise. |
+
+```lua
+exports.tiltann_banking:AddSocietyMoney('mechanic', 1200, 'Repair job')
+```
+
+### `RemoveSocietyMoney(job, amount, note)`
+
+Takes money from the business. If the balance is too low, nothing moves.
+
+| | |
+| --- | --- |
+| **Takes** | `job` (text), `amount` (number), `note` (optional text). |
+| **Returns** | `true` on success, `false` if the balance is too low or the amount is invalid. |
+
+```lua
+if exports.tiltann_banking:RemoveSocietyMoney('mechanic', 800, 'Parts') then
+    -- the business paid
+end
+```
+
+---
+
+## Invoices
+
+### `CreateInvoice(fromAccountId, numberOrServerId, amount, reason)`
+
+Sends an invoice from any account, for example a job script billing a player. When the receiver pays, the money goes to the sending account, so use a business account to bill for the business. Needs `Config.Billing.Enabled`.
+
+| | |
+| --- | --- |
+| **Takes** | `fromAccountId` (number): the `id` of the sending account. `numberOrServerId`: the receiver (see [Recipients](#recipients-numberorserverid)). `amount` (number). `reason` (optional text, shown on the invoice). |
+| **Returns** | `ok` (boolean), `reason` (text, only when `ok` is `false`). |
+
+Reasons: `recipient_not_found`, `billing_disabled`, `billing_invalid_amount`, `billing_recipient_not_found` and `billing_too_many_open` (the sender already has `Config.Billing.MaxOpenInvoicesPerSender` open invoices).
 
 ```lua
 local society = exports.tiltann_banking:GetSocietyAccountByName('mechanic')
-exports.tiltann_banking:CreateInvoice(society.id, targetServerId, 2500, 'Vehicle repair')
-```
-
-#### `GetAccountOwner(number)`
-
-Who an account belongs to, from its account number. Returns `nil` if the number does not exist.
-
-```lua
-local owner = exports.tiltann_banking:GetAccountOwner('920-48271039')
-
-if owner then
-    print(owner.name, owner.identifier, owner.online, owner.source)
-end
-```
-
-Fields: `number`, `type`, `accountName`, `identifier` (the owner), `name` (character name), `online`, `source` (only when online) and `jobName`. The name comes from the online character, or from the ESX `users` table for offline players. A business account has no owner, you get its `jobName` instead and `identifier`/`name` are `nil`.
-
-### Business (society) accounts
-
-Every job has a business account, created on first use. The job name is the framework job name (`police`, `mechanic`, ...).
-
-```lua
-exports.tiltann_banking:GetSocietyBalance(job)                -- integer
-exports.tiltann_banking:AddSocietyMoney(job, amount, note)    -- boolean
-exports.tiltann_banking:RemoveSocietyMoney(job, amount, note) -- boolean, false if not enough
-```
-
-```lua
--- the repair paid the mechanic business
-exports.tiltann_banking:AddSocietyMoney('mechanic', 1200, 'Repair job')
-
--- the business buys something
-if exports.tiltann_banking:RemoveSocietyMoney('mechanic', 800, 'Parts') then
-    -- ...
-end
-```
-
-### Invoices
-
-#### `CreateInvoice(fromAccountId, numberOrServerId, amount, reason)`
-
-Sends an invoice on behalf of any account, for example a job script billing a player. Returns `ok, reason`. Needs `Config.Billing.Enabled`.
-
-The money goes to `fromAccountId` when the invoice is paid, so use a business account id to bill for a business.
-
-```lua
--- look up the business account by its number (shown in the terminal)
-local society = exports.tiltann_banking:GetAccountByNumber('920-11223344')
 
 if society then
     local ok, reason = exports.tiltann_banking:CreateInvoice(society.id, targetServerId, 2500, 'Vehicle repair')
@@ -239,22 +398,22 @@ if society then
 end
 ```
 
-Reasons: `recipient_not_found`, `billing_disabled`, `billing_invalid_amount`, `billing_recipient_not_found`, `billing_too_many_open`.
-
 ---
 
 ## Client exports
 
-These open or close the bank screens. All of them return `true`, except `IsUiOpen`.
+These open or close the bank screens. They are client side, so call them from a client script.
 
-| Export | What it does |
-| --- | --- |
-| `OpenBank()` | Opens the bank terminal (tablet). |
-| `OpenAtm()` | Opens the ATM screen. |
-| `OpenBilling()` | Opens the billing menu (also on F7, `Config.Billing.Key`). |
-| `CloseUi()` | Closes whatever is open. |
-| `IsUiOpen()` | `true` while a bank screen is open. |
-| `RefreshUi()` | Reloads the data of the open screen. |
+| Export | Takes | Returns | What it does |
+| --- | --- | --- | --- |
+| `OpenBank()` | nothing | `true` | Opens the bank terminal (tablet). |
+| `OpenAtm()` | nothing | `true` | Opens the ATM screen. |
+| `OpenBilling()` | nothing | `true` | Opens the billing menu (also on F7, `Config.Billing.Key`). |
+| `CloseUi()` | nothing | `true` | Closes whatever is open. |
+| `IsUiOpen()` | nothing | `true` while a bank screen is open, otherwise `false` | Tells you if a bank screen is open. |
+| `RefreshUi()` | nothing | `true` | Reloads the data of the open screen. |
+
+Each one returns `false` if something went wrong inside. Opening a screen does nothing when one is already open.
 
 ```lua
 -- open the ATM from your own interaction
@@ -277,12 +436,11 @@ if exports.tiltann_banking:IsUiOpen() then
 end
 ```
 
-If you set `Config.Interaction.Mode = 'custom'`, nothing is set up for you. `Interaction.Custom(openAtm, openBank, openBilling)` is called once with the same functions, you can also use these exports instead.
+With `Config.Interaction.Mode = 'custom'` nothing is set up for you. `Interaction.Custom(openAtm, openBank, openBilling)` is called once on the client with functions that open the same screens.
 
 ---
 
 ## Notes
 
-* **Mirror.** The default account is mirrored into the framework bank balance and job businesses into society accounts, so other scripts that read the framework balance keep working. These exports are the cleanest way to change money, because they also write the transaction history.
-* **Changing the framework bank directly** also works, the difference is booked as a correction in the history.
-* **Logs.** With `/tb_debug on` every export call is printed in the console with its arguments.
+* **Mirror.** The main account is mirrored into the framework bank balance and job businesses into society accounts, so other scripts that read the framework balance keep working. These exports are the cleanest way to change money, because they also write the transaction history. Changing the framework bank directly also works, the difference is booked as a correction in the history.
+* **Debug.** With `/tb_debug on` every export call is printed in the console with its arguments and result.
