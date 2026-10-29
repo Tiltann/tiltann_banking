@@ -10,7 +10,7 @@ description 'Banking for FiveM: personal and savings accounts, businesses, bank 
 -- it asks the GitHub API for the newest release of this repository and
 -- reports the version, the release notes and the download link in the
 -- console. Bump `version` on every release so the check stays meaningful.
-version '1.0.0'
+version '1.1.0'
 repository 'https://github.com/Tiltann/tiltann_banking'
 
 shared_script '@ox_lib/init.lua'
