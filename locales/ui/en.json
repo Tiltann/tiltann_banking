@@ -299,6 +299,7 @@
 	"error.loan_no_active_loan": "You don't have an active loan.",
 	"error.billing_disabled": "Billing is currently disabled.",
 	"error.billing_invalid_amount": "Invalid amount or recipient.",
+	"error.billing_same_account": "You cannot bill an account to itself (self billing is switched off).",
 	"error.billing_too_many_open": "Too many open invoices already.",
 	"error.billing_recipient_not_found": "Recipient not found.",
 	"error.billing_already_resolved": "That invoice was already resolved.",

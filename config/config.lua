@@ -326,6 +326,7 @@ Config = {
 		Enabled = true,
 		Key = 'F7',                    -- opens the billing menu, players can rebind it
 		NearbyRadius = 10.0,           -- how far the menu looks for players to bill
+		AllowSelfBilling = true,       -- you appear in your own nearby list and can bill your own account; paying such a bill moves no money, it is just settled
 
 		-- A bill from a business can pay the biller a share. This is the most
 		-- they can take (percent), the rest goes to the business.

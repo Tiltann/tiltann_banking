@@ -46,8 +46,12 @@ function TbBilling.SendInvoice(senderAccountId, recipientAccountId, amount, reas
 
 	amount = TbUtils.RoundMoney(amount)
 
-	if amount <= 0 or senderAccountId == recipientAccountId then
+	if amount <= 0 then
 		return false, 'billing_invalid_amount'
+	end
+
+	if senderAccountId == recipientAccountId and not Config.Billing.AllowSelfBilling then
+		return false, 'billing_same_account'
 	end
 
 	if not TbAccounts.GetById(senderAccountId) or not TbAccounts.GetById(recipientAccountId) then
@@ -114,10 +118,15 @@ function TbBilling.PayInvoice(invoiceId, payerIdentifier, force)
 		return false, 'billing_already_resolved'
 	end
 
-	local transferOk, transferError = TbAccounts.Transfer(
-		invoice.recipient_account_id, invoice.sender_account_id, invoice.amount, TbEnums.TransactionType.INVOICE_PAYMENT,
-		payerIdentifier, ('Invoice #%d'):format(invoiceId), { invoiceId = invoiceId }, force
-	)
+	-- A bill to your own account has nowhere to move money to: it is simply settled
+	local transferOk, transferError = true, nil
+
+	if invoice.recipient_account_id ~= invoice.sender_account_id then
+		transferOk, transferError = TbAccounts.Transfer(
+			invoice.recipient_account_id, invoice.sender_account_id, invoice.amount, TbEnums.TransactionType.INVOICE_PAYMENT,
+			payerIdentifier, ('Invoice #%d'):format(invoiceId), { invoiceId = invoiceId }, force
+		)
+	end
 
 	if not transferOk then
 		TbDb.Update("UPDATE tb_invoices SET status = 'pending', resolved_at = NULL WHERE id = ?", { invoiceId })
@@ -492,7 +501,7 @@ TbSafe.Callback('tiltann_banking:billing:getNearby', function(source)
 	local nearby = {}
 
 	for _, player in ipairs(TbFramework.GetPlayers()) do
-		local otherPed = player.source ~= source and GetPlayerPed(player.source) or 0
+		local otherPed = (Config.Billing.AllowSelfBilling or player.source ~= source) and GetPlayerPed(player.source) or 0
 
 		if otherPed ~= 0 and #(GetEntityCoords(otherPed) - origin) <= Config.Billing.NearbyRadius then
 			nearby[#nearby + 1] = { id = player.source, name = TbFramework.GetName(player.source) or tostring(player.source) }

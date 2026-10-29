@@ -299,6 +299,7 @@
 	"error.loan_no_active_loan": "Du hast keinen aktiven Kredit.",
 	"error.billing_disabled": "Rechnungen sind derzeit deaktiviert.",
 	"error.billing_invalid_amount": "Ungültiger Betrag oder Empfänger.",
+	"error.billing_same_account": "Ein Konto kann sich nicht selbst eine Rechnung stellen (Selbstrechnung ist ausgeschaltet).",
 	"error.billing_too_many_open": "Bereits zu viele offene Rechnungen.",
 	"error.billing_recipient_not_found": "Empfänger nicht gefunden.",
 	"error.billing_already_resolved": "Diese Rechnung wurde bereits bearbeitet.",
